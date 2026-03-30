@@ -20,10 +20,16 @@ def _fmt_cards(cards: list[str] | None) -> str:
     return " ".join(_fmt_card(c) for c in cards)
 
 
+def _fmt_amount(amount: float) -> str:
+    if amount == int(amount):
+        return f"{int(amount):,}"
+    return f"{amount:g}"
+
+
 def _fmt_action(action) -> str:
     parts = [action.position, action.action]
     if action.amount is not None:
-        parts.append(f"${action.amount:,}")
+        parts.append(_fmt_amount(action.amount))
     if action.is_allin:
         parts.append("(all-in)")
     return " ".join(parts)
@@ -40,7 +46,7 @@ def build_text_history(hand: HandHistory) -> str:
 
     # Effective stack
     if hand.effective_stack is not None:
-        lines.append(f"Eff. stack: ${hand.effective_stack:,}")
+        lines.append(f"Eff. stack: {_fmt_amount(hand.effective_stack)} BB")
 
     lines.append("")
 
@@ -60,7 +66,7 @@ def build_text_history(hand: HandHistory) -> str:
         board_str = ""
         if street.board:
             board_str = f" ({' '.join(_fmt_card(c) for c in street.board)})"
-        street_header = f"{street.name.capitalize()}{board_str} (${street.pot_start:,})"
+        street_header = f"{street.name.capitalize()}{board_str} ({_fmt_amount(street.pot_start)} BB)"
         lines.append(street_header)
 
         for action in street.actions:

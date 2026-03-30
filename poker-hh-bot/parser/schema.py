@@ -18,23 +18,23 @@ class Player(BaseModel):
 class Action(BaseModel):
     position: str
     action: str  # fold / check / call / bet / raise / 3bet / 4bet / jam
-    amount: Optional[int] = None
+    amount: Optional[float] = None
     is_allin: bool = False
 
 
 class Street(BaseModel):
     name: str  # preflop / flop / turn / river
     board: list[str] = Field(default_factory=list)
-    pot_start: int
+    pot_start: float
     actions: list[Action] = Field(default_factory=list)
-    pot_end: int
+    pot_end: float
 
 
 class HandHistory(BaseModel):
     venue: str = ""
     stakes: str = ""
     bb_size: int = 0
-    effective_stack: Optional[int] = None
+    effective_stack: Optional[float] = None
     players: list[Player] = Field(default_factory=list)
     streets: list[Street] = Field(default_factory=list)
     hero_cards: Optional[list[str]] = None
