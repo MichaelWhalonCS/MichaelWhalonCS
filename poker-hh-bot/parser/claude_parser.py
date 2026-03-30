@@ -53,4 +53,28 @@ def parse_hand(
     hand = HandHistory(**result["hand"])
     gaps = result.get("gaps", [])
 
+    _normalize_bet_raise(hand)
     return hand, gaps
+
+
+def _normalize_bet_raise(hand: HandHistory) -> None:
+    """
+    Enforce correct bet/raise terminology on post-flop streets:
+      - First aggressive action on the street → 'bet'
+      - Subsequent aggressive actions → 'raise'
+    Preflop is left as-is (open=raise, 3bet, 4bet conventions).
+    Mutates hand in place.
+    """
+    AGGRESSIVE = {"bet", "raise", "3bet", "4bet", "jam"}
+    for street in hand.streets:
+        if street.name == "preflop":
+            continue
+        aggression_count = 0
+        for action in street.actions:
+            if action.action in AGGRESSIVE and action.amount is not None:
+                if aggression_count == 0:
+                    action.action = "bet"
+                else:
+                    if action.action == "bet":
+                        action.action = "raise"
+                aggression_count += 1

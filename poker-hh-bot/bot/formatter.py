@@ -35,6 +35,10 @@ def _fmt_action(action) -> str:
     return " ".join(parts)
 
 
+def _fmt_optional_int(val: int | None) -> str:
+    return str(val) if val is not None else "unknown"
+
+
 def build_text_history(hand: HandHistory) -> str:
     lines: list[str] = []
 
@@ -48,7 +52,21 @@ def build_text_history(hand: HandHistory) -> str:
     if hand.effective_stack is not None:
         lines.append(f"Eff. stack: {_fmt_amount(hand.effective_stack)} BB")
 
+    # Tournament info
+    if hand.is_tournament:
+        remaining = _fmt_optional_int(hand.players_remaining)
+        cashing = _fmt_optional_int(hand.players_cashing)
+        lines.append(f"Players remaining: {remaining}  |  Cashing: {cashing}")
+
     lines.append("")
+
+    # Per-player stacks
+    if any(p.stack is not None for p in hand.players):
+        for player in hand.players:
+            stack_str = f"{_fmt_amount(player.stack)} BB" if player.stack is not None else "unknown"
+            hero_tag = " (Hero)" if player.is_hero else ""
+            lines.append(f"  {player.position}{hero_tag}: {stack_str}")
+        lines.append("")
 
     # Villain reads
     for player in hand.players:
