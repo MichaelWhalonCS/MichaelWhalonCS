@@ -34,18 +34,17 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-_FONT_SM = None
-_FONT_MD = None
-_FONT_LG = None
+_FONTS: dict[int, ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
+
+
+def _get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    if size not in _FONTS:
+        _FONTS[size] = _font(size)
+    return _FONTS[size]
 
 
 def _get_fonts():
-    global _FONT_SM, _FONT_MD, _FONT_LG
-    if _FONT_SM is None:
-        _FONT_SM = _font(14)
-        _FONT_MD = _font(18)
-        _FONT_LG = _font(26)
-    return _FONT_SM, _FONT_MD, _FONT_LG
+    return _get_font(14), _get_font(18), _get_font(26)
 
 
 def _hex_to_rgb(h: str) -> tuple[int, int, int]:
@@ -59,10 +58,12 @@ def _paste_card(canvas: Image.Image, card_img: Image.Image, cx: int, cy: int) ->
     canvas.paste(card_img, (x, y), card_img)
 
 
+def _fmt_bb(amount: float) -> str:
+    return f"{int(amount):g}" if amount == int(amount) else f"{amount:g}"
+
+
 def _fmt_pot(pot: float) -> str:
-    if pot == int(pot):
-        return f"{int(pot):,} BB"
-    return f"{pot:g} BB"
+    return f"Pot: {_fmt_bb(pot)} BB"
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +71,6 @@ def _fmt_pot(pot: float) -> str:
 # ---------------------------------------------------------------------------
 
 def _chip_color(amount: float) -> tuple[int, int, int]:
-    """Return RGB chip color based on BB amount."""
     if amount < 5:
         return (220, 220, 220)   # white
     elif amount < 15:
@@ -83,56 +83,105 @@ def _chip_color(amount: float) -> tuple[int, int, int]:
         return (130, 40, 160)    # purple
 
 
-def _draw_chip_stack(draw: ImageDraw.ImageDraw, cx: int, cy: int,
-                     amount: float, font: ImageFont.ImageFont) -> None:
-    """Draw a stack of 3 chips centred at (cx, cy) with the amount below."""
-    r = 13
-    stack_count = 3
-    y_step = 5   # vertical offset per layer (perspective illusion)
-    color = _chip_color(amount)
+def _draw_single_chip_stack(draw: ImageDraw.ImageDraw, cx: int, cy: int,
+                             color: tuple[int, int, int], stack: int = 3,
+                             r: int = 13, y_step: int = 5) -> None:
+    """Draw a stack of chips at (cx, cy) — no label."""
     shadow = (15, 15, 15)
     highlight = tuple(min(255, c + 80) for c in color)
-
-    for i in range(stack_count - 1, -1, -1):
+    for i in range(stack - 1, -1, -1):
         yo = i * y_step
-        # Shadow ellipse (slightly larger, offset down-right)
         draw.ellipse([cx - r + 2, cy - r + yo + 2, cx + r + 2, cy + r + yo + 2],
                      fill=shadow + (160,))
-        # Chip body
         draw.ellipse([cx - r, cy - r + yo, cx + r, cy + r + yo],
-                     fill=color + (230,), outline=(255, 255, 255, 80), width=1)
-        # Inner highlight ring
+                     fill=color + (230,), outline=(255, 255, 255, 60), width=1)
         draw.ellipse([cx - r + 4, cy - r + yo + 4, cx + r - 4, cy + r + yo - 4],
-                     outline=highlight + (120,), width=1)
+                     outline=highlight + (100,), width=1)
 
-    # Amount label below the stack
-    amt_str = f"{int(amount) if amount == int(amount) else amount:g}"
-    bb = draw.textbbox((0, 0), amt_str, font=font)
+
+def _draw_bet_chips(draw: ImageDraw.ImageDraw, cx: int, cy: int,
+                    amount: float) -> None:
+    """Draw chips + amount label for a player bet."""
+    font = _get_font(13)
+    color = _chip_color(amount)
+    r, stack, y_step = 13, 3, 5
+    _draw_single_chip_stack(draw, cx, cy, color, stack, r, y_step)
+    # Amount label below stack, offset clear of chips
+    label = _fmt_bb(amount)
+    bb = draw.textbbox((0, 0), label, font=font)
     tw = bb[2] - bb[0]
-    draw.text((cx - tw // 2, cy + r + (stack_count * y_step) + 4),
-              amt_str, font=font, fill=(255, 240, 180, 255))
+    label_y = cy + r + stack * y_step + 5
+    # Dark bg behind label for legibility
+    draw.rectangle([cx - tw // 2 - 2, label_y - 1,
+                    cx + tw // 2 + 2, label_y + (bb[3] - bb[1]) + 1],
+                   fill=(0, 0, 0, 160))
+    draw.text((cx - tw // 2, label_y), label, font=font, fill=(255, 240, 180, 255))
 
 
-def _chip_pos(player_pos: str) -> tuple[int, int]:
-    """
-    Return the (x, y) where bet chips should appear for a given position —
-    roughly 60 % of the way from the player box toward the table centre.
-    """
-    px, py = POSITION_COORDS[player_pos]
-    cx = int(px * 0.45 + TABLE_CX * 0.55)
-    cy = int(py * 0.45 + TABLE_CY * 0.55)
+def _chip_pos(pos: str) -> tuple[int, int]:
+    """Position for bet chips — 65% toward player, 35% toward table centre."""
+    px, py = POSITION_COORDS[pos]
+    cx = int(px * 0.65 + TABLE_CX * 0.35)
+    cy = int(py * 0.65 + TABLE_CY * 0.35)
     return cx, cy
 
 
 # ---------------------------------------------------------------------------
-# Player boxes + hole cards helper (shared by build_frame & build_showdown_frame)
+# Action log (top-right corner)
+# ---------------------------------------------------------------------------
+
+def _draw_action_log(img: Image.Image, history: list[str]) -> None:
+    """
+    Draw a semi-transparent action history panel in the top-right corner.
+    Street headers are blue, past actions are grey, current action is gold.
+    """
+    if not history:
+        return
+
+    font = _get_font(14)
+    pad = 10
+    line_h = 19
+    panel_w = 290
+    max_lines = 14
+
+    lines = history[-max_lines:]
+    panel_h = len(lines) * line_h + pad * 2
+
+    x = CANVAS_W - panel_w - pad
+    y = pad
+
+    overlay = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
+
+    d.rounded_rectangle([x, y, x + panel_w, y + panel_h],
+                        radius=6, fill=(8, 8, 8, 185))
+
+    for i, line in enumerate(lines):
+        ly = y + pad + i * line_h
+        is_current = (i == len(lines) - 1)
+        is_header = line.startswith("▸")
+
+        if is_header:
+            color = (140, 180, 255, 255)   # blue street header
+        elif is_current:
+            color = (255, 215, 0, 255)     # gold current action
+        else:
+            color = (190, 190, 190, 210)   # grey past actions
+
+        d.text((x + pad, ly), line, font=font, fill=color)
+
+    result = Image.alpha_composite(img, overlay)
+    img.paste(result)
+
+
+# ---------------------------------------------------------------------------
+# Player boxes + hole cards helper
 # ---------------------------------------------------------------------------
 
 def _draw_players(overlay: Image.Image, hand: HandHistory,
                   folded_positions: set[str],
                   revealed_villain_pos: str | None = None) -> None:
-    """Draw all player boxes and hole cards onto overlay (RGBA)."""
-    font_sm, _, _ = _get_fonts()
+    font_sm = _get_font(14)
     ov_draw = ImageDraw.Draw(overlay)
 
     player_map = {p.position: p for p in hand.players}
@@ -150,12 +199,12 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
         player = player_map.get(pos)
 
         if player is None and pos not in active_positions:
-            # Empty seat — dimmed placeholder
             ov_draw.rounded_rectangle(
                 [bx, by, bx2, by2], radius=6,
                 fill=(20, 20, 20, 100), outline=(70, 70, 70, 120), width=1,
             )
-            ov_draw.text((bx + 6, by + 4), pos, font=font_sm, fill=(100, 100, 100, 160))
+            ov_draw.text((bx + 6, by + 4), pos, font=font_sm,
+                         fill=(100, 100, 100, 160))
             continue
 
         box_fill = FOLDED_BOX_COLOR if is_folded else ACTIVE_BOX_COLOR
@@ -176,18 +225,17 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
         text_color = (200, 200, 200, 200) if is_folded else (255, 255, 255, 255)
         ov_draw.text((bx + 6, by + 4), label, font=font_sm, fill=text_color)
 
-    # Hero hole cards — always face-up below the hero box
+    # Hero hole cards
     if hero_pos and hand.hero_cards and hero_pos in POSITION_COORDS:
         _draw_hole_cards(overlay, hero_pos, hand.hero_cards, face_down=False)
 
-    # Villain hole cards — shown at revealed_villain_pos if set
+    # Villain hole cards at showdown
     if revealed_villain_pos and hand.villain_cards and revealed_villain_pos in POSITION_COORDS:
         _draw_hole_cards(overlay, revealed_villain_pos, hand.villain_cards, face_down=False)
 
 
 def _draw_hole_cards(overlay: Image.Image, pos: str,
                      cards: list[str], face_down: bool = False) -> None:
-    """Paste hole cards below the player box at pos."""
     cx, cy = POSITION_COORDS[pos]
     gap = 6
     total_w = len(cards) * CARD_W + (len(cards) - 1) * gap
@@ -196,12 +244,60 @@ def _draw_hole_cards(overlay: Image.Image, pos: str,
 
     for i, cs in enumerate(cards):
         if face_down:
-            from renderer.card_sprites import render_card_back
             card_img = render_card_back()
         else:
             rank, suit = normalise_card(cs)
             card_img = render_card(rank, suit)
         _paste_card(overlay, card_img, start_x + i * (CARD_W + gap), card_y)
+
+
+# ---------------------------------------------------------------------------
+# Sub-helpers shared by build_frame & build_showdown_frame
+# ---------------------------------------------------------------------------
+
+def _draw_pot(draw: ImageDraw.ImageDraw, pot: float) -> None:
+    """Pot chip cluster + label, positioned below the board cards."""
+    font_lg = _get_font(26)
+    font_sm = _get_font(14)
+
+    pot_text_y = TABLE_CY + 55
+    pot_str = _fmt_pot(pot)
+    bb = draw.textbbox((0, 0), pot_str, font=font_lg)
+    pw = bb[2] - bb[0]
+    draw.text((TABLE_CX - pw // 2, pot_text_y), pot_str, font=font_lg,
+              fill=POT_TEXT_COLOR)
+
+    # 3-chip decorative cluster just above the text — no per-chip labels
+    if pot > 0:
+        chip_y = pot_text_y - 28
+        color = _chip_color(pot)
+        offsets = [(-20, 2), (0, -4), (20, 2)]
+        for dx, dy in offsets:
+            _draw_single_chip_stack(draw, TABLE_CX + dx, chip_y + dy,
+                                    color, stack=2, r=11, y_step=4)
+
+
+def _draw_board(img: Image.Image, board: list[str]) -> None:
+    card_gap = 8
+    total_w = len(board) * CARD_W + (len(board) - 1) * card_gap
+    start_x = TABLE_CX - total_w // 2 + CARD_W // 2
+    for i, card_str in enumerate(board):
+        rank, suit = normalise_card(card_str)
+        _paste_card(img, render_card(rank, suit),
+                    start_x + i * (CARD_W + card_gap), BOARD_AREA_Y)
+
+
+def _draw_ticker(img: Image.Image, label: str) -> None:
+    font_md = _get_font(18)
+    ticker = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
+    td = ImageDraw.Draw(ticker)
+    td.rectangle([0, CANVAS_H - TICKER_H, CANVAS_W, CANVAS_H], fill=TICKER_COLOR)
+    bb = td.textbbox((0, 0), label, font=font_md)
+    tw, th = bb[2] - bb[0], bb[3] - bb[1]
+    td.text(((CANVAS_W - tw) // 2, CANVAS_H - TICKER_H + (TICKER_H - th) // 2),
+            label, font=font_md, fill=TICKER_TEXT_COLOR)
+    result = Image.alpha_composite(img, ticker)
+    img.paste(result)
 
 
 # ---------------------------------------------------------------------------
@@ -216,24 +312,24 @@ def build_frame(
     folded_positions: set[str],
     action_label: str,
     board_so_far: list[str] | None = None,
+    action_history: list[str] | None = None,
 ) -> Image.Image:
-    font_sm, font_md, font_lg = _get_fonts()
-
     img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
     draw = ImageDraw.Draw(img)
 
     # Table oval
-    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255), outline=(220, 220, 220, 255), width=4)
-
-    # Pot chips cluster + label
-    _draw_pot_chips(draw, pot, font_lg)
+    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255),
+                 outline=(220, 220, 220, 255), width=4)
 
     # Community cards
     board = board_so_far if board_so_far is not None else street.board
     if board:
         _draw_board(img, board)
 
-    # Player boxes + hero cards
+    # Pot (drawn after board so text sits below)
+    _draw_pot(draw, pot)
+
+    # Player boxes + hole cards
     overlay = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
     _draw_players(overlay, hand, folded_positions)
 
@@ -242,12 +338,16 @@ def build_frame(
             and action.position in POSITION_COORDS:
         chip_draw = ImageDraw.Draw(overlay)
         cpx, cpy = _chip_pos(action.position)
-        _draw_chip_stack(chip_draw, cpx, cpy, action.amount, font_sm)
+        _draw_bet_chips(chip_draw, cpx, cpy, action.amount)
 
     img = Image.alpha_composite(img, overlay)
 
-    # Ticker bar
-    _draw_ticker(img, action_label, font_md)
+    # Action log panel (top-right)
+    if action_history:
+        _draw_action_log(img, action_history)
+
+    # Bottom ticker
+    _draw_ticker(img, action_label)
 
     return img.convert("RGB")
 
@@ -262,70 +362,28 @@ def build_showdown_frame(
     pot: float,
     folded_positions: set[str],
     villain_pos: str | None,
+    action_history: list[str] | None = None,
 ) -> Image.Image:
-    """Special final frame that reveals the villain's hole cards."""
-    font_sm, font_md, font_lg = _get_fonts()
-
     img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
     draw = ImageDraw.Draw(img)
 
-    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255), outline=(220, 220, 220, 255), width=4)
-    _draw_pot_chips(draw, pot, font_lg)
+    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255),
+                 outline=(220, 220, 220, 255), width=4)
 
     if board_so_far:
         _draw_board(img, board_so_far)
+
+    _draw_pot(draw, pot)
 
     overlay = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
     _draw_players(overlay, hand, folded_positions, revealed_villain_pos=villain_pos)
     img = Image.alpha_composite(img, overlay)
 
+    if action_history:
+        log = action_history + ["▸ SHOWDOWN"]
+        _draw_action_log(img, log)
+
     label = "SHOWDOWN" if hand.villain_cards else "HERO WINS"
-    _draw_ticker(img, label, font_md)
+    _draw_ticker(img, label)
 
     return img.convert("RGB")
-
-
-# ---------------------------------------------------------------------------
-# Drawing sub-helpers
-# ---------------------------------------------------------------------------
-
-def _draw_pot_chips(draw: ImageDraw.ImageDraw, pot: float,
-                    font: ImageFont.ImageFont) -> None:
-    """Draw pot label + a small chip cluster just above centre."""
-    pot_str = f"Pot: {_fmt_pot(pot)}"
-    bb = draw.textbbox((0, 0), pot_str, font=font)
-    pw = bb[2] - bb[0]
-    # Pot text sits below table centre so it clears the board cards
-    pot_text_y = TABLE_CY + 60
-    draw.text((TABLE_CX - pw // 2, pot_text_y), pot_str, font=font, fill=POT_TEXT_COLOR)
-
-    # Small chip cluster just above the pot text
-    if pot > 0:
-        font_sm, _, _ = _get_fonts()
-        offsets = [(-18, 0), (0, -5), (18, 0)]
-        for dx, dy in offsets:
-            _draw_chip_stack(draw, TABLE_CX + dx, pot_text_y - 30 + dy, pot / 3, font_sm)
-
-
-def _draw_board(img: Image.Image, board: list[str]) -> None:
-    card_gap = 8
-    total_w = len(board) * CARD_W + (len(board) - 1) * card_gap
-    start_x = TABLE_CX - total_w // 2 + CARD_W // 2
-    for i, card_str in enumerate(board):
-        rank, suit = normalise_card(card_str)
-        card_img = render_card(rank, suit)
-        _paste_card(img, card_img, start_x + i * (CARD_W + card_gap), BOARD_AREA_Y)
-
-
-def _draw_ticker(img: Image.Image, label: str,
-                 font: ImageFont.ImageFont) -> None:
-    ticker = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
-    td = ImageDraw.Draw(ticker)
-    td.rectangle([0, CANVAS_H - TICKER_H, CANVAS_W, CANVAS_H], fill=TICKER_COLOR)
-    bb = td.textbbox((0, 0), label, font=font)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    tx = (CANVAS_W - tw) // 2
-    ty = CANVAS_H - TICKER_H + (TICKER_H - th) // 2
-    td.text((tx, ty), label, font=font, fill=TICKER_TEXT_COLOR)
-    result = Image.alpha_composite(img, ticker)
-    img.paste(result)

@@ -13,6 +13,7 @@ FPS = 24
 
 
 def _action_label(action: Action) -> str:
+    """Bottom ticker label."""
     parts = [action.position, action.action.upper()]
     if action.amount is not None:
         val = action.amount
@@ -22,12 +23,30 @@ def _action_label(action: Action) -> str:
     return "  ".join(parts)
 
 
+def _log_action_line(action: Action) -> str:
+    """Single-line entry for the action log panel."""
+    parts = [action.position, action.action]
+    if action.amount is not None:
+        val = action.amount
+        parts.append(f"{int(val) if val == int(val) else val:g} BB")
+    if action.is_allin:
+        parts.append("(all-in)")
+    return "  " + " ".join(parts)
+
+
+def _street_header(street_name: str, board: list[str]) -> str:
+    """Action-log header line for a street."""
+    from bot.utils import normalise_card
+    if board:
+        cards = " ".join("".join(normalise_card(c)) for c in board)
+        return f"▸ {street_name.upper()}  {cards}"
+    return f"▸ {street_name.upper()}"
+
+
 def _villain_position(hand: HandHistory, folded: set[str]) -> str | None:
-    """Return the position of the first non-hero, non-folded player."""
     for p in hand.players:
         if not p.is_hero and p.position not in folded:
             return p.position
-    # Fallback: any non-hero (e.g. everyone folded on river)
     for p in hand.players:
         if not p.is_hero:
             return p.position
@@ -39,10 +58,12 @@ def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
     folded: set[str] = set()
     board_so_far: list[str] = []
     running_pot: float = 0
+    history: list[str] = []          # accumulates for the action log panel
 
     for street in hand.streets:
         board_so_far = board_so_far + street.board
         running_pot = street.pot_start
+        history.append(_street_header(street.name, street.board))
 
         for action in street.actions:
             if action.action == "fold":
@@ -50,19 +71,20 @@ def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
             elif action.amount is not None:
                 running_pot += action.amount
 
-            label = _action_label(action)
+            history.append(_log_action_line(action))
+
             frame = build_frame(
                 hand=hand,
                 street=street,
                 action=action,
                 pot=running_pot,
                 folded_positions=set(folded),
-                action_label=label,
+                action_label=_action_label(action),
                 board_so_far=board_so_far,
+                action_history=list(history),
             )
             frames.append(frame)
 
-    # Showdown frame — only if hand has villain cards or a result to reveal
     if hand.villain_cards or hand.result:
         villain_pos = _villain_position(hand, folded)
         frames.append(build_showdown_frame(
@@ -71,6 +93,7 @@ def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
             pot=running_pot,
             folded_positions=folded,
             villain_pos=villain_pos,
+            action_history=list(history),
         ))
 
     return frames
