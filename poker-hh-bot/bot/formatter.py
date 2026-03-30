@@ -80,10 +80,13 @@ def build_text_history(hand: HandHistory) -> str:
     lines.append("")
 
     # Streets
+    seen_board: list[str] = []
     for street in hand.streets:
+        new_cards = [c for c in street.board if c not in seen_board]
+        seen_board.extend(new_cards)
         board_str = ""
-        if street.board:
-            board_str = f" ({' '.join(_fmt_card(c) for c in street.board)})"
+        if new_cards:
+            board_str = f" ({' '.join(_fmt_card(c) for c in new_cards)})"
         street_header = f"{street.name.capitalize()}{board_str} ({_fmt_amount(street.pot_start)} BB)"
         lines.append(street_header)
 

@@ -28,9 +28,9 @@ class Action(BaseModel):
 class Street(BaseModel):
     name: str  # preflop / flop / turn / river
     board: list[str] = Field(default_factory=list)
-    pot_start: float
+    pot_start: float = 0.0
     actions: list[Action] = Field(default_factory=list)
-    pot_end: float
+    pot_end: float = 0.0
 
 
 class HandHistory(BaseModel):

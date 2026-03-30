@@ -50,11 +50,21 @@ def parse_hand(
         raw = raw.rsplit("```", 1)[0]
 
     result = json.loads(raw)
+    _coerce_pot_sizes(result["hand"])
     hand = HandHistory(**result["hand"])
     gaps = result.get("gaps", [])
 
     _normalize_bet_raise(hand)
     return hand, gaps
+
+
+def _coerce_pot_sizes(hand_dict: dict) -> None:
+    """Replace null pot_start/pot_end with 0.0 so Pydantic doesn't reject them."""
+    for street in hand_dict.get("streets", []):
+        if street.get("pot_start") is None:
+            street["pot_start"] = 0.0
+        if street.get("pot_end") is None:
+            street["pot_end"] = 0.0
 
 
 def _normalize_bet_raise(hand: HandHistory) -> None:

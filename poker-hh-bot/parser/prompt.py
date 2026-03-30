@@ -12,6 +12,9 @@ SYSTEM_PROMPT = (
     "5. Store hero_cards and villain_cards at top level only — not inside player objects. "
     "6. Set is_tournament=true if the hand is from a tournament. "
     "7. Identify gaps and return a friendly specific question for each one. "
+    "8. In each street's 'board' field store ONLY the cards newly dealt on that street: "
+    "flop gets the 3 flop cards, turn gets only the 1 turn card, river gets only the 1 river card. "
+    "Never repeat earlier streets' cards in a later street's board field. "
 
     "ACTION TERMINOLOGY (strictly enforce): "
     "On the FLOP, TURN, and RIVER: the first player to put in chips aggressively "
