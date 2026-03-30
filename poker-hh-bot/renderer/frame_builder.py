@@ -225,20 +225,31 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
         text_color = (200, 200, 200, 200) if is_folded else (255, 255, 255, 255)
         ov_draw.text((bx + 6, by + 4), label, font=font_sm, fill=text_color)
 
-    # Hero hole cards
+    # Hero hole cards (hero-perspective hands)
     if hero_pos and hand.hero_cards and hero_pos in POSITION_COORDS:
         _draw_hole_cards(overlay, hero_pos, hand.hero_cards, face_down=False)
 
-    # Villain hole cards at showdown
+    # Villain hole cards at showdown (hero-perspective hands)
     if revealed_villain_pos and hand.villain_cards and revealed_villain_pos in POSITION_COORDS:
         _draw_hole_cards(overlay, revealed_villain_pos, hand.villain_cards, face_down=False)
+
+    # No-hero case: draw hole cards stored on each player object
+    if not hero_pos:
+        for p in hand.players:
+            if p.hole_cards and p.position in POSITION_COORDS:
+                _draw_hole_cards(overlay, p.position, p.hole_cards, face_down=False)
 
 
 def _draw_hole_cards(overlay: Image.Image, pos: str,
                      cards: list[str], face_down: bool = False) -> None:
+    from renderer.layout import PLAYER_BOX_W
     cx, cy = POSITION_COORDS[pos]
-    gap = 6
-    total_w = len(cards) * CARD_W + (len(cards) - 1) * gap
+    n = len(cards)
+    # For PLO (4 cards) tighten the gap so they all fit near the player box
+    max_w = max(PLAYER_BOX_W, CARD_W * n + 4)
+    gap = max(2, (max_w - CARD_W * n) // max(n - 1, 1)) if n > 1 else 6
+    gap = min(gap, 8)
+    total_w = n * CARD_W + (n - 1) * gap
     start_x = cx - total_w // 2 + CARD_W // 2
     card_y = cy + PLAYER_BOX_H // 2 + CARD_H // 2 + 4
 
@@ -383,7 +394,13 @@ def build_showdown_frame(
         log = action_history + ["▸ SHOWDOWN"]
         _draw_action_log(img, log)
 
-    label = "SHOWDOWN" if hand.villain_cards else "HERO WINS"
+    has_hero = any(p.is_hero for p in hand.players)
+    if not has_hero:
+        label = hand.result or "SHOWDOWN"
+    elif hand.villain_cards:
+        label = "SHOWDOWN"
+    else:
+        label = "HERO WINS"
     _draw_ticker(img, label)
 
     return img.convert("RGB")

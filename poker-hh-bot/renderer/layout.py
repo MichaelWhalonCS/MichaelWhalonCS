@@ -18,7 +18,10 @@ TABLE_BBOX = [
 POSITION_COORDS: dict[str, tuple[int, int]] = {
     "BTN":   (1082, 355),
     "CO":    (910,  155),
-    "HJ":    (640,  112),
+    "HJ":    (760,  115),   # 9-max hijack (right of top-center)
+    "MP":    (640,  112),   # middle position / HJ in 7-max (top-center)
+    "LJ":    (520,  115),   # lojack (left of top-center)
+    "UTG+2": (520,  115),   # alias for LJ
     "UTG+1": (372,  155),
     "UTG":   (220,  270),
     "BB":    (148,  390),

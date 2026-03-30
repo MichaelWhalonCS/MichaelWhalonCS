@@ -73,10 +73,21 @@ def build_text_history(hand: HandHistory) -> str:
         if player.villain_read:
             lines.append(f"📖 {player.position}: {player.villain_read.notes}")
 
-    # Hero cards
-    hero_card_str = _fmt_cards(hand.hero_cards)
-    hero_pos = next((p.position for p in hand.players if p.is_hero), "Hero")
-    lines.append(f"\nHero ({hero_pos}): {hero_card_str}")
+    # Cards section — hero mode vs no-hero (replayer/PLO screenshot)
+    hero_pos = next((p.position for p in hand.players if p.is_hero), None)
+    players_with_cards = [p for p in hand.players if p.hole_cards]
+
+    if hero_pos:
+        # Classic hero perspective
+        hero_card_str = _fmt_cards(hand.hero_cards)
+        lines.append(f"\nHero ({hero_pos}): {hero_card_str}")
+    elif players_with_cards:
+        # No explicit hero — show all known hole cards by position
+        lines.append("")
+        for p in players_with_cards:
+            lines.append(f"  {p.position}: {_fmt_cards(p.hole_cards)}")
+    else:
+        lines.append(f"\nHero: {_fmt_cards(hand.hero_cards)}")
     lines.append("")
 
     # Streets
@@ -103,15 +114,22 @@ def build_text_history(hand: HandHistory) -> str:
 
 
 def build_spoiler_message(hand: HandHistory) -> str:
-    """Returns the HTML spoiler block."""
-    villain_line = ""
+    """Returns the HTML spoiler block, or None if all cards are already shown."""
+    has_hero = any(p.is_hero for p in hand.players)
+    players_with_cards = [p for p in hand.players if p.hole_cards]
+
+    # No-hero case: all cards shown inline — no spoiler needed
+    if not has_hero and players_with_cards:
+        result_line = hand.result or ""
+        return f"🃏 Result\n\n{result_line}" if result_line else ""
+
+    # Hero perspective: spoiler reveals villain cards
     if hand.villain_cards:
         villain_line = f"Villain: {_fmt_cards(hand.villain_cards)}"
     else:
         villain_line = "Villain: (mucked)"
 
     result_line = hand.result or ""
-
     inner = villain_line
     if result_line:
         inner += f"\n{result_line}"

@@ -13,6 +13,7 @@ class Player(BaseModel):
     stack: Optional[float] = None   # stack in BBs at start of hand
     is_hero: bool = False
     villain_read: Optional[VillainRead] = None
+    hole_cards: Optional[list[str]] = None  # set when cards are known (PLO or no-hero)
 
 
 class Action(BaseModel):
@@ -37,6 +38,7 @@ class HandHistory(BaseModel):
     venue: str = ""
     stakes: str = ""
     bb_size: float = 0
+    game_type: str = "nlhe"   # "nlhe" or "plo"
     is_tournament: bool = False
     effective_stack: Optional[float] = None   # smallest stack at start, in BBs
     # Tournament info (nice-to-have; None = unknown)
