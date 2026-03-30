@@ -55,14 +55,25 @@ def _paste_card(canvas: Image.Image, card_img: Image.Image, cx: int, cy: int) ->
     canvas.paste(card_img, (x, y), card_img)
 
 
+def _fmt_pot(pot: float) -> str:
+    if pot == int(pot):
+        return f"{int(pot):,} BB"
+    return f"{pot:g} BB"
+
+
 def build_frame(
     hand: HandHistory,
     street: Street,
     action: Action,
-    pot: int,
+    pot: float,
     folded_positions: set[str],
     action_label: str,
+    board_so_far: list[str] | None = None,
 ) -> Image.Image:
+    """
+    board_so_far: all community cards visible at this point in the hand
+                  (accumulates across streets). Defaults to street.board.
+    """
     font_sm, font_md, font_lg = _get_fonts()
 
     img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
@@ -70,12 +81,14 @@ def build_frame(
 
     draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255), outline=(220, 220, 220, 255), width=4)
 
-    pot_str = f"Pot: ${pot:,}"
+    # Pot
+    pot_str = f"Pot: {_fmt_pot(pot)}"
     bbox = draw.textbbox((0, 0), pot_str, font=font_lg)
     pw = bbox[2] - bbox[0]
     draw.text((TABLE_CX - pw // 2, TABLE_CY + 20), pot_str, font=font_lg, fill=POT_TEXT_COLOR)
 
-    board = street.board
+    # Board — use accumulated cards if provided
+    board = board_so_far if board_so_far is not None else street.board
     if board:
         card_gap = 8
         total_w = len(board) * CARD_W + (len(board) - 1) * card_gap
@@ -87,6 +100,7 @@ def build_frame(
 
     player_map = {p.position: p for p in hand.players}
     hero_pos = next((p.position for p in hand.players if p.is_hero), None)
+    active_positions = {p.position for p in hand.players}
 
     overlay = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
     ov_draw = ImageDraw.Draw(overlay)
@@ -101,11 +115,13 @@ def build_frame(
         is_folded = pos in folded_positions
         player = player_map.get(pos)
 
-        if player is None and pos not in {p.position for p in hand.players}:
+        # Empty seat — always draw a dimmed placeholder so table looks full
+        if player is None and pos not in active_positions:
             ov_draw.rounded_rectangle(
                 [bx, by, bx2, by2], radius=6,
-                fill=(20, 20, 20, 80), outline=(80, 80, 80, 100), width=1,
+                fill=(20, 20, 20, 100), outline=(70, 70, 70, 120), width=1,
             )
+            ov_draw.text((bx + 6, by + 4), pos, font=font_sm, fill=(100, 100, 100, 160))
             continue
 
         box_fill = FOLDED_BOX_COLOR if is_folded else ACTIVE_BOX_COLOR
@@ -119,12 +135,24 @@ def build_frame(
 
         label = pos
         if player and player.stack is not None:
-            label = f"{pos}\n${player.stack:,}"
+            label = f"{pos}\n{int(player.stack)} BB"
         if is_folded:
             label = f"{pos}\nFOLDED"
 
         text_color = (200, 200, 200, 200) if is_folded else (255, 255, 255, 255)
         ov_draw.text((bx + 6, by + 4), label, font=font_sm, fill=text_color)
+
+    # Hero hole cards — render below the BTN box
+    if hero_pos and hand.hero_cards and hero_pos in POSITION_COORDS:
+        hcx, hcy = POSITION_COORDS[hero_pos]
+        card_gap = 6
+        total_w = len(hand.hero_cards) * CARD_W + (len(hand.hero_cards) - 1) * card_gap
+        start_x = hcx - total_w // 2 + CARD_W // 2
+        card_y = hcy + PLAYER_BOX_H // 2 + CARD_H // 2 + 4
+        for i, cs in enumerate(hand.hero_cards):
+            rank, suit = normalise_card(cs)
+            card_img = render_card(rank, suit)
+            _paste_card(overlay, card_img, start_x + i * (CARD_W + card_gap), card_y)
 
     img = Image.alpha_composite(img, overlay)
 

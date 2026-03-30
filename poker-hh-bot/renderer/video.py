@@ -15,7 +15,8 @@ FPS = 24
 def _action_label(action: Action) -> str:
     parts = [action.position, action.action.upper()]
     if action.amount is not None:
-        parts.append(f"${action.amount:,}")
+        val = action.amount
+        parts.append(f"{int(val) if val == int(val) else val:g} BB")
     if action.is_allin:
         parts.append("ALL-IN")
     return "  ".join(parts)
@@ -24,8 +25,11 @@ def _action_label(action: Action) -> str:
 def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
     frames: list[Image.Image] = []
     folded: set[str] = set()
+    board_so_far: list[str] = []
 
     for street in hand.streets:
+        # Accumulate community cards as each street is revealed
+        board_so_far = board_so_far + street.board
         running_pot = street.pot_start
 
         for action in street.actions:
@@ -40,8 +44,9 @@ def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
                 street=street,
                 action=action,
                 pot=running_pot,
-                folded_positions=folded,
+                folded_positions=set(folded),
                 action_label=label,
+                board_so_far=board_so_far,
             )
             frames.append(frame)
 
