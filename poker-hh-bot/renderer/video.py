@@ -6,7 +6,7 @@ import tempfile
 from PIL import Image
 
 from parser.schema import HandHistory, Street, Action
-from renderer.frame_builder import build_frame
+from renderer.frame_builder import build_frame, build_showdown_frame
 
 FRAMES_PER_ACTION = 1
 FPS = 24
@@ -22,13 +22,25 @@ def _action_label(action: Action) -> str:
     return "  ".join(parts)
 
 
+def _villain_position(hand: HandHistory, folded: set[str]) -> str | None:
+    """Return the position of the first non-hero, non-folded player."""
+    for p in hand.players:
+        if not p.is_hero and p.position not in folded:
+            return p.position
+    # Fallback: any non-hero (e.g. everyone folded on river)
+    for p in hand.players:
+        if not p.is_hero:
+            return p.position
+    return None
+
+
 def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
     frames: list[Image.Image] = []
     folded: set[str] = set()
     board_so_far: list[str] = []
+    running_pot: float = 0
 
     for street in hand.streets:
-        # Accumulate community cards as each street is revealed
         board_so_far = board_so_far + street.board
         running_pot = street.pot_start
 
@@ -49,6 +61,17 @@ def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
                 board_so_far=board_so_far,
             )
             frames.append(frame)
+
+    # Showdown frame — only if hand has villain cards or a result to reveal
+    if hand.villain_cards or hand.result:
+        villain_pos = _villain_position(hand, folded)
+        frames.append(build_showdown_frame(
+            hand=hand,
+            board_so_far=board_so_far,
+            pot=running_pot,
+            folded_positions=folded,
+            villain_pos=villain_pos,
+        ))
 
     return frames
 
