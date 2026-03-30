@@ -8,11 +8,13 @@ CORNER_RADIUS = 8
 SUIT_COLORS = {
     "♠": "#1a1a1a", "♥": "#CC0000", "♦": "#0066CC", "♣": "#2E7D32",
     "s": "#1a1a1a", "h": "#CC0000", "d": "#0066CC", "c": "#2E7D32",
+    "?": "#888888",   # unknown suit → grey
 }
 
 SUIT_SYMBOLS = {
     "♠": "♠", "♥": "♥", "♦": "♦", "♣": "♣",
     "s": "♠", "h": "♥", "d": "♦", "c": "♣",
+    "?": "?",          # unknown suit → question mark
 }
 
 

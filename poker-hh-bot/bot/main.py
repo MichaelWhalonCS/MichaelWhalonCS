@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 
 from config import TELEGRAM_BOT_TOKEN
-from bot.handlers import handle_callback, handle_message
+from bot.handlers import handle_callback, handle_message, handle_photo
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -27,6 +27,9 @@ def main() -> None:
 
     # Handle all text messages (groups + DMs, no admin rights required)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Handle photo messages (hand history screenshots)
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # Handle inline button presses
     app.add_handler(CallbackQueryHandler(handle_callback))

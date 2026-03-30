@@ -65,17 +65,35 @@ _RANK_NORM.update({"t": "T", "T": "T", "j": "J", "J": "J",
 def normalise_card(card: str) -> tuple[str, str]:
     """
     Accept cards in any common notation and return (rank, suit_symbol).
-    Supports: "As", "Kh", "A♠", "K♥", "2d", "Tc" etc.
+    Supports: "As", "Kh", "A♠", "K♥", "2d", "Tc", "3?" (unknown suit),
+    or bare rank "3" / "K" (rank known, suit unknown → suit returns "?").
     """
     card = card.strip()
-    if len(card) < 2:
+    if not card:
         return "?", "?"
 
-    if card[-1] in "♠♥♦♣":
+    # Bare "?" → fully unknown
+    if card == "?":
+        return "?", "?"
+
+    # Known unicode suit at end
+    if len(card) >= 2 and card[-1] in "♠♥♦♣":
         rank = card[:-1].upper()
         suit = card[-1]
         return rank, suit
 
+    # Explicit unknown suit marker at end: "3?" or "K?"
+    if len(card) >= 2 and card[-1] == "?":
+        rank_raw = card[:-1]
+        rank = _RANK_NORM.get(rank_raw, rank_raw.upper())
+        return rank, "?"
+
+    # Single character — treat as rank-only
+    if len(card) == 1:
+        rank = _RANK_NORM.get(card, card.upper())
+        return rank, "?"
+
+    # Last char is a letter suit abbreviation
     rank_raw = card[:-1]
     suit_raw = card[-1].lower()
     rank = _RANK_NORM.get(rank_raw, rank_raw.upper())

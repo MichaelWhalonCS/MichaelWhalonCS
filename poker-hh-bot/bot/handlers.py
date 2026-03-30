@@ -26,7 +26,7 @@ from bot import conversation as conv
 from bot.conversation import State
 from bot.formatter import build_text_history, build_spoiler_message
 from bot.utils import looks_like_hand_history
-from parser.claude_parser import parse_hand
+from parser.claude_parser import parse_hand, parse_hand_from_image
 from parser.schema import HandHistory
 
 log = logging.getLogger(__name__)
@@ -69,13 +69,24 @@ async def _transition_to_choice(update: Update, user_id: int) -> None:
     store the completed hand, and show the output keyboard.
     """
     session = conv.get_session(user_id)
+    image_bytes = getattr(session, "image_bytes", None)
     try:
-        hand, _ = await asyncio.get_event_loop().run_in_executor(
-            None,
-            parse_hand,
-            session.original_text,
-            session.gap_answers,
-        )
+        if image_bytes is not None:
+            hand, _ = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: parse_hand_from_image(
+                    bytes(image_bytes),
+                    media_type="image/jpeg",
+                    gap_answers=session.gap_answers,
+                ),
+            )
+        else:
+            hand, _ = await asyncio.get_event_loop().run_in_executor(
+                None,
+                parse_hand,
+                session.original_text,
+                session.gap_answers,
+            )
     except Exception as exc:
         log.exception("Re-parse failed for user %s", user_id)
         await _reply(update, f"⚠️ Couldn't re-parse the hand: {exc}\nPlease try again.")
@@ -213,3 +224,47 @@ def _render_video_sync(hand: HandHistory) -> str:
     """Blocking call to the video renderer (runs in executor thread)."""
     from renderer.video import render_video
     return render_video(hand)
+
+
+# ---------------------------------------------------------------------------
+# Photo handler (image → parse via Claude vision)
+# ---------------------------------------------------------------------------
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle an image message: download the photo, send to Claude vision."""
+    if not update.message or not update.message.photo:
+        return
+
+    user_id = _user_id(update)
+
+    # If user is answering a gap question with an image, ignore (text only)
+    if conv.is_active(user_id):
+        return
+
+    await _reply(update, "🃏 Reading hand history from image…")
+
+    # Get highest-resolution photo
+    photo = update.message.photo[-1]
+    tg_file = await photo.get_file()
+    image_bytes = await tg_file.download_as_bytearray()
+
+    try:
+        hand, gaps = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: parse_hand_from_image(bytes(image_bytes), media_type="image/jpeg"),
+        )
+    except Exception as exc:
+        log.exception("Image parse failed for user %s", user_id)
+        await _reply(update, f"⚠️ Couldn't parse the hand from image: {exc}\nPlease try again.")
+        return
+
+    # Use a placeholder text so gap re-parse can work (image not re-sent)
+    placeholder = "[image]"
+    session = conv.start_session(user_id, placeholder, hand, gaps)
+    # Store the image bytes so we can re-parse with them if gaps exist
+    session.image_bytes = image_bytes  # type: ignore[attr-defined]
+
+    if gaps:
+        await _ask_next_gap(update, user_id)
+    else:
+        await _transition_to_choice(update, user_id)
