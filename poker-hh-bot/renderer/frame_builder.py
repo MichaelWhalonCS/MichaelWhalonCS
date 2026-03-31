@@ -199,12 +199,7 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
         player = player_map.get(pos)
 
         if player is None and pos not in active_positions:
-            ov_draw.rounded_rectangle(
-                [bx, by, bx2, by2], radius=6,
-                fill=(20, 20, 20, 100), outline=(70, 70, 70, 120), width=1,
-            )
-            ov_draw.text((bx + 6, by + 4), pos, font=font_sm,
-                         fill=(100, 100, 100, 160))
+            # Seat not in this hand — skip entirely
             continue
 
         box_fill = FOLDED_BOX_COLOR if is_folded else ACTIVE_BOX_COLOR
@@ -245,13 +240,17 @@ def _draw_hole_cards(overlay: Image.Image, pos: str,
     from renderer.layout import PLAYER_BOX_W
     cx, cy = POSITION_COORDS[pos]
     n = len(cards)
-    # For PLO (4 cards) tighten the gap so they all fit near the player box
-    max_w = max(PLAYER_BOX_W, CARD_W * n + 4)
-    gap = max(2, (max_w - CARD_W * n) // max(n - 1, 1)) if n > 1 else 6
-    gap = min(gap, 8)
-    total_w = n * CARD_W + (n - 1) * gap
-    start_x = cx - total_w // 2 + CARD_W // 2
-    card_y = cy + PLAYER_BOX_H // 2 + CARD_H // 2 + 4
+
+    # PLO: scale cards down so 4 fit without overlapping adjacent seats
+    if n >= 4:
+        cw, ch = int(CARD_W * 0.65), int(CARD_H * 0.65)
+    else:
+        cw, ch = CARD_W, CARD_H
+
+    gap = 3 if n >= 4 else 6
+    total_w = n * cw + (n - 1) * gap
+    start_x = cx - total_w // 2 + cw // 2
+    card_y = cy + PLAYER_BOX_H // 2 + ch // 2 + 4
 
     for i, cs in enumerate(cards):
         if face_down:
@@ -259,7 +258,9 @@ def _draw_hole_cards(overlay: Image.Image, pos: str,
         else:
             rank, suit = normalise_card(cs)
             card_img = render_card(rank, suit)
-        _paste_card(overlay, card_img, start_x + i * (CARD_W + gap), card_y)
+        if n >= 4:
+            card_img = card_img.resize((cw, ch), resample=Image.LANCZOS)
+        _paste_card(overlay, card_img, start_x + i * (cw + gap), card_y)
 
 
 # ---------------------------------------------------------------------------
