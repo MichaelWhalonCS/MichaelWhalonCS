@@ -44,6 +44,40 @@ _OUTPUT_KEYBOARD = InlineKeyboardMarkup(
     ]
 )
 
+_WELCOME = (
+    "👋 *Welcome to PokerHandBot\\!*\n\n"
+    "Just describe a hand in plain English and I'll parse it, ask any missing "
+    "details, then render it as a video or formatted text\\.\n\n"
+    "*How to use:*\n"
+    "• Type or paste a hand description — as casual or detailed as you like\n"
+    "• Send a screenshot from your poker app\n"
+    "• Answer any follow\\-up questions, then choose Video or Text\n\n"
+    "*Supports:* NLHE and PLO \\| Cash and tournaments \\| 2–9 players\n\n"
+    "Type /help to see this again\\."
+)
+
+_HELP = (
+    "🃏 *PokerHandBot Help*\n\n"
+    "*Sending a hand:*\n"
+    "Describe it naturally — position, action, board cards, amounts in BB or "
+    "dollars\\. Any detail you omit will be asked as a follow\\-up\\.\n\n"
+    "_Example:_\n"
+    "`Open 33 BTN, SB BB call\\. 60BB deep\\. Flop 9s Ts 9d checks through\\. "
+    "Turn 3h, SB leads 4BB, I raise to 10, he calls\\. River 2s he leads 15 I shove he folds\\.`\n\n"
+    "*Screenshot:*\n"
+    "Send a photo of a hand history from any poker app — the bot reads it "
+    "automatically\\.\n\n"
+    "*Output options:*\n"
+    "🎬 *Video* — animated MP4, one frame per action with action log\n"
+    "📝 *Text* — structured hand history \\+ spoiler for villain cards\n\n"
+    "*Supported formats:*\n"
+    "• No Limit Hold'em \\(NLHE\\)\n"
+    "• Pot Limit Omaha \\(PLO\\)\n"
+    "• Cash games and tournaments\n"
+    "• 2–9 players, any position naming convention\n\n"
+    "Start a new hand any time — just paste it\\."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -224,6 +258,18 @@ def _render_video_sync(hand: HandHistory) -> str:
     """Blocking call to the video renderer (runs in executor thread)."""
     from renderer.video import render_video
     return render_video(hand)
+
+
+# ---------------------------------------------------------------------------
+# /start and /help command handlers
+# ---------------------------------------------------------------------------
+
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _reply(update, _WELCOME, parse_mode=ParseMode.MARKDOWN_V2)
+
+
+async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _reply(update, _HELP, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 # ---------------------------------------------------------------------------
