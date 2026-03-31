@@ -2,10 +2,11 @@ from __future__ import annotations
 from PIL import Image, ImageDraw, ImageFont
 
 from renderer.layout import (
-    CANVAS_W, CANVAS_H, FELT_COLOR, TABLE_BBOX,
+    CANVAS_W, CANVAS_H, BG_COLOR, FELT_FILL, RAIL_COLOR, RAIL_HIGHLIGHT,
+    RAIL_INNER_EDGE, RAIL_BBOX, TABLE_BBOX,
     POSITION_COORDS, PLAYER_BOX_W, PLAYER_BOX_H,
     HERO_BORDER_COLOR, NORMAL_BORDER_COLOR,
-    FOLDED_BOX_COLOR, ACTIVE_BOX_COLOR,
+    FOLDED_BOX_COLOR, ACTIVE_BOX_COLOR, GHOST_BOX_COLOR, GHOST_BOX_BORDER,
     POT_TEXT_COLOR, BOARD_AREA_Y,
     TICKER_H, TICKER_COLOR, TICKER_TEXT_COLOR,
     TABLE_CX, TABLE_CY,
@@ -47,9 +48,16 @@ def _get_fonts():
     return _get_font(14), _get_font(18), _get_font(26)
 
 
-def _hex_to_rgb(h: str) -> tuple[int, int, int]:
-    h = h.lstrip("#")
-    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+def _draw_table(img: Image.Image) -> None:
+    """Draw wood rail + felt oval over the dark canvas."""
+    draw = ImageDraw.Draw(img)
+    # Wood rail
+    draw.ellipse(RAIL_BBOX, fill=RAIL_COLOR, outline=RAIL_HIGHLIGHT, width=5)
+    # Felt surface
+    draw.ellipse(TABLE_BBOX, fill=FELT_FILL)
+    # Inner shadow ring for depth
+    inner = [TABLE_BBOX[0]+10, TABLE_BBOX[1]+8, TABLE_BBOX[2]-10, TABLE_BBOX[3]-8]
+    draw.ellipse(inner, fill=None, outline=RAIL_INNER_EDGE, width=4)
 
 
 def _paste_card(canvas: Image.Image, card_img: Image.Image, cx: int, cy: int) -> None:
@@ -130,21 +138,29 @@ def _chip_pos(pos: str) -> tuple[int, int]:
 # Action log (top-right corner)
 # ---------------------------------------------------------------------------
 
+def _smart_truncate(history: list[str], max_lines: int) -> list[str]:
+    """Keep all street headers (▸ lines) + most recent actions to fit max_lines."""
+    if len(history) <= max_lines:
+        return history
+    header_idx  = {i for i, l in enumerate(history) if l.startswith("▸")}
+    action_idx  = [i for i in range(len(history)) if i not in header_idx]
+    slots       = max(0, max_lines - len(header_idx))
+    keep        = header_idx | set(action_idx[-slots:])
+    return [l for i, l in enumerate(history) if i in keep]
+
+
 def _draw_action_log(img: Image.Image, history: list[str]) -> None:
-    """
-    Draw a semi-transparent action history panel in the top-right corner.
-    Street headers are blue, past actions are grey, current action is gold.
-    """
+    """Semi-transparent action history panel — always shows all street headers."""
     if not history:
         return
 
-    font = _get_font(14)
-    pad = 10
-    line_h = 19
-    panel_w = 290
-    max_lines = 14
+    font   = _get_font(12)
+    pad    = 10
+    line_h = 17
+    panel_w = 300
+    max_lines = 22
 
-    lines = history[-max_lines:]
+    lines = _smart_truncate(history, max_lines)
     panel_h = len(lines) * line_h + pad * 2
 
     x = CANVAS_W - panel_w - pad
@@ -154,19 +170,20 @@ def _draw_action_log(img: Image.Image, history: list[str]) -> None:
     d = ImageDraw.Draw(overlay)
 
     d.rounded_rectangle([x, y, x + panel_w, y + panel_h],
-                        radius=6, fill=(8, 8, 8, 185))
+                        radius=8, fill=(5, 8, 18, 210),
+                        outline=(40, 50, 80, 160), width=1)
 
     for i, line in enumerate(lines):
         ly = y + pad + i * line_h
         is_current = (i == len(lines) - 1)
-        is_header = line.startswith("▸")
+        is_header  = line.startswith("▸")
 
         if is_header:
-            color = (140, 180, 255, 255)   # blue street header
+            color = (120, 170, 255, 255)
         elif is_current:
-            color = (255, 215, 0, 255)     # gold current action
+            color = (255, 215, 0, 255)
         else:
-            color = (190, 190, 190, 210)   # grey past actions
+            color = (180, 185, 200, 210)
 
         d.text((x + pad, ly), line, font=font, fill=color)
 
@@ -341,12 +358,10 @@ def build_frame(
     board_so_far: list[str] | None = None,
     action_history: list[str] | None = None,
 ) -> Image.Image:
-    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
+    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), BG_COLOR + (255,))
     draw = ImageDraw.Draw(img)
 
-    # Table oval
-    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255),
-                 outline=(220, 220, 220, 255), width=4)
+    _draw_table(img)
 
     # Community cards
     board = board_so_far if board_so_far is not None else street.board
@@ -391,11 +406,10 @@ def build_showdown_frame(
     villain_pos: str | None,
     action_history: list[str] | None = None,
 ) -> Image.Image:
-    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
+    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), BG_COLOR + (255,))
     draw = ImageDraw.Draw(img)
 
-    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255),
-                 outline=(220, 220, 220, 255), width=4)
+    _draw_table(img)
 
     if board_so_far:
         _draw_board(img, board_so_far)
@@ -434,11 +448,10 @@ def build_question_frame(
     action_history: list[str] | None = None,
 ) -> Image.Image:
     """Final frame for hands with no known result — big ??? overlay."""
-    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
+    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), BG_COLOR + (255,))
     draw = ImageDraw.Draw(img)
 
-    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255),
-                 outline=(220, 220, 220, 255), width=4)
+    _draw_table(img)
 
     if board_so_far:
         _draw_board(img, board_so_far)
