@@ -405,3 +405,55 @@ def build_showdown_frame(
     _draw_ticker(img, label)
 
     return img.convert("RGB")
+
+
+# ---------------------------------------------------------------------------
+# Question-mark frame (open-ended / hero-folded hands)
+# ---------------------------------------------------------------------------
+
+def build_question_frame(
+    hand: HandHistory,
+    board_so_far: list[str],
+    pot: float,
+    folded_positions: set[str],
+    action_history: list[str] | None = None,
+) -> Image.Image:
+    """Final frame for hands with no known result — big ??? overlay."""
+    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), _hex_to_rgb(FELT_COLOR) + (255,))
+    draw = ImageDraw.Draw(img)
+
+    draw.ellipse(TABLE_BBOX, fill=(255, 255, 255, 255),
+                 outline=(220, 220, 220, 255), width=4)
+
+    if board_so_far:
+        _draw_board(img, board_so_far)
+
+    _draw_pot(draw, pot)
+
+    overlay = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
+    _draw_players(overlay, hand, folded_positions)
+    img = Image.alpha_composite(img, overlay)
+
+    if action_history:
+        log = action_history + ["▸ ???"]
+        _draw_action_log(img, log)
+
+    # Big "???" centred on the table
+    font_huge = _get_font(96)
+    qd = ImageDraw.Draw(img)
+    q_text = "???"
+    bb = qd.textbbox((0, 0), q_text, font=font_huge)
+    tw, th = bb[2] - bb[0], bb[3] - bb[1]
+    qx = TABLE_CX - tw // 2 - bb[0]
+    qy = TABLE_CY - th // 2 - bb[1] + 30   # slight downward offset from board
+    # Dark semi-transparent backing
+    pad = 18
+    qd.rounded_rectangle(
+        [qx - pad, qy - pad, qx + tw + pad, qy + th + pad],
+        radius=14, fill=(10, 10, 10, 190),
+    )
+    qd.text((qx, qy), q_text, font=font_huge, fill=(255, 215, 0, 255))
+
+    _draw_ticker(img, "WHAT DID VILLAIN HAVE?")
+
+    return img.convert("RGB")

@@ -6,7 +6,7 @@ import tempfile
 from PIL import Image
 
 from parser.schema import HandHistory, Street, Action
-from renderer.frame_builder import build_frame, build_showdown_frame
+from renderer.frame_builder import build_frame, build_showdown_frame, build_question_frame
 
 FRAMES_PER_ACTION = 1
 FPS = 24
@@ -93,6 +93,15 @@ def _build_frame_sequence(hand: HandHistory) -> list[Image.Image]:
             pot=running_pot,
             folded_positions=folded,
             villain_pos=villain_pos,
+            action_history=list(history),
+        ))
+    elif not hand.villain_cards and not hand.result:
+        # No known outcome — show ??? frame
+        frames.append(build_question_frame(
+            hand=hand,
+            board_so_far=board_so_far,
+            pot=running_pot,
+            folded_positions=folded,
             action_history=list(history),
         ))
 
