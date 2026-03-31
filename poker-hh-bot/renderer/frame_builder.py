@@ -187,6 +187,7 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
     player_map = {p.position: p for p in hand.players}
     hero_pos = next((p.position for p in hand.players if p.is_hero), None)
     active_positions = {p.position for p in hand.players}
+    n_hole_cards = 4 if hand.game_type == "plo" else 2
 
     for pos, (cx, cy) in POSITION_COORDS.items():
         bx = cx - PLAYER_BOX_W // 2
@@ -197,9 +198,16 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
         is_hero = pos == hero_pos
         is_folded = pos in folded_positions
         player = player_map.get(pos)
+        in_hand = pos in active_positions
 
-        if player is None and pos not in active_positions:
-            # Seat not in this hand — skip entirely
+        if not in_hand:
+            # Empty seat — draw a subtle ghost box
+            ov_draw.rounded_rectangle(
+                [bx, by, bx2, by2], radius=6,
+                fill=(20, 20, 20, 80), outline=(60, 60, 60, 80), width=1,
+            )
+            ov_draw.text((bx + 6, by + 4), pos, font=font_sm,
+                         fill=(80, 80, 80, 120))
             continue
 
         box_fill = FOLDED_BOX_COLOR if is_folded else ACTIVE_BOX_COLOR
@@ -220,19 +228,26 @@ def _draw_players(overlay: Image.Image, hand: HandHistory,
         text_color = (200, 200, 200, 200) if is_folded else (255, 255, 255, 255)
         ov_draw.text((bx + 6, by + 4), label, font=font_sm, fill=text_color)
 
-    # Hero hole cards (hero-perspective hands)
+    # Hero hole cards (face-up)
     if hero_pos and hand.hero_cards and hero_pos in POSITION_COORDS:
         _draw_hole_cards(overlay, hero_pos, hand.hero_cards, face_down=False)
 
-    # Villain hole cards at showdown (hero-perspective hands)
+    # Active non-hero players: face-down cards while they're still in the hand
+    for pos, player in player_map.items():
+        if pos == hero_pos or pos in folded_positions:
+            continue
+        if pos not in POSITION_COORDS:
+            continue
+        if player.hole_cards:
+            # No-hero mode: known cards shown face-up
+            _draw_hole_cards(overlay, pos, player.hole_cards, face_down=False)
+        elif pos != revealed_villain_pos:
+            # Hero mode: show face-down backs to indicate player is active
+            _draw_hole_cards(overlay, pos, ["?"] * n_hole_cards, face_down=True)
+
+    # Villain cards revealed at showdown
     if revealed_villain_pos and hand.villain_cards and revealed_villain_pos in POSITION_COORDS:
         _draw_hole_cards(overlay, revealed_villain_pos, hand.villain_cards, face_down=False)
-
-    # No-hero case: draw hole cards stored on each player object
-    if not hero_pos:
-        for p in hand.players:
-            if p.hole_cards and p.position in POSITION_COORDS:
-                _draw_hole_cards(overlay, p.position, p.hole_cards, face_down=False)
 
 
 def _draw_hole_cards(overlay: Image.Image, pos: str,
