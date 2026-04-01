@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+ENV PYTHONUTF8=1
+
 WORKDIR /app
 
 COPY requirements.txt .

@@ -1,7 +1,14 @@
 """
 Entry point: python -m bot.main
 """
+import sys
 import logging
+
+# Force UTF-8 stdout/stderr on Windows to avoid codec errors with unicode chars
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 from telegram.ext import (
     Application,
